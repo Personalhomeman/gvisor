@@ -55,6 +55,10 @@ type PacketBuffer struct {
 	LinkHeader      buffer.View
 	NetworkHeader   buffer.View
 	TransportHeader buffer.View
+
+	// Hash is the transport layer hash of this packet. A value of zero
+	// indicates no valid hash has been set.
+	Hash uint32
 }
 
 // Clone makes a copy of pk. It clones the Data field, which creates a new
