@@ -3461,7 +3461,7 @@ func TestRouterSolicitation(t *testing.T) {
 					headerLength: test.linkHeaderLen,
 				}
 				e.Endpoint.LinkEPCapabilities |= stack.CapabilityResolutionRequired
-				waitForPkt := func(timeout time.Duration) {
+				waitForPkt := func(timeout time.Duration, srcAddr tcpip.Address, opts []header.NDPOption) {
 					t.Helper()
 					ctx, _ := context.WithTimeout(context.Background(), timeout)
 					p, ok := e.ReadContext(ctx)
@@ -3481,10 +3481,10 @@ func TestRouterSolicitation(t *testing.T) {
 
 					checker.IPv6(t,
 						p.Pkt.Header.View(),
-						checker.SrcAddr(header.IPv6Any),
+						checker.SrcAddr(srcAddr),
 						checker.DstAddr(header.IPv6AllRoutersMulticastAddress),
 						checker.TTL(header.NDPHopLimit),
-						checker.NDPRS(),
+						checker.NDPRS(checker.NDPRSOptions(opts)),
 					)
 
 					if l, want := p.Pkt.Header.AvailableLength(), int(test.linkHeaderLen); l != want {
@@ -3510,16 +3510,28 @@ func TestRouterSolicitation(t *testing.T) {
 					t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 				}
 
-				// Make sure each RS got sent at the right
-				// times.
+				// Make sure each RS is sent at the right time.
 				remaining := test.maxRtrSolicit
 				if remaining > 0 {
-					waitForPkt(test.effectiveMaxRtrSolicitDelay + defaultAsyncEventTimeout)
+					waitForPkt(test.effectiveMaxRtrSolicitDelay+defaultAsyncEventTimeout, header.IPv6Any, nil)
 					remaining--
 				}
+
+				// If an address is assigned to the NIC, it should be used as the
+				// source address of the RS.
+				if err := s.AddAddress(nicID, header.IPv6ProtocolNumber, llAddr1); err != nil {
+					t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, header.IPv6ProtocolNumber, llAddr1, err)
+				}
+
+				// Since we have a valid source address, we include the source
+				// link-layer address option.
+				opts := []header.NDPOption{
+					header.NDPSourceLinkLayerAddressOption(linkAddr1),
+				}
+
 				for ; remaining > 0; remaining-- {
 					waitForNothing(test.effectiveRtrSolicitInt - defaultTimeout)
-					waitForPkt(defaultAsyncEventTimeout)
+					waitForPkt(defaultAsyncEventTimeout, llAddr1, opts)
 				}
 
 				// Make sure no more RS.
